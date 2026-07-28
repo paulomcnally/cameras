@@ -19,13 +19,27 @@
         .controls button:hover { background: #2563eb; }
         .controls button.home { background: #dc2626; }
         .controls button.home:hover { background: #b91c1c; }
-        .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .controls button.moving { background: #2563eb; animation: pulse 0.3s infinite; }
-        @keyframes pulse { 50% { opacity: 0.6; } }
+        .controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .controls button.active { background: #2563eb; position: relative; overflow: hidden; }
+        .controls button.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 3px;
+            background: #93c5fd;
+            animation: progress 0.4s ease-out;
+        }
+        @keyframes progress { from { width: 0; } to { width: 100%; } }
+        .toast {
+            position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+            background: #1e293b; color: #e2e8f0; padding: 0.5rem 1.2rem;
+            border-radius: 6px; font-size: 0.85rem; border: 1px solid #334155;
+            opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 100;
+            white-space: nowrap;
+        }
+        .toast.show { opacity: 1; }
         .bar { padding: 0.3rem 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; color: #888; }
         .bar input[type=range] { width: 50px; }
-        .bar .moving-label { color: #60a5fa; font-size: 0.75rem; display: none; }
-        .bar .moving-label.show { display: inline; }
         .empty { text-align: center; padding: 3rem; color: #666; }
         .empty a { color: #60a5fa; }
         .badge { font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 3px; background: #16a34a33; color: #4ade80; }
@@ -55,7 +69,6 @@
             <div class="bar">
                 <span>Vel:</span>
                 <input type="range" min="0.1" max="1" step="0.1" value="0.5" id="speed-{{ cam.id }}">
-                <span class="moving-label" id="ml-{{ cam.id }}">moviendo...</span>
             </div>
             <div class="controls" id="ctrls-{{ cam.id }}">
                 <button onclick="ptz({{ cam.id }},'up')">&#9650;</button>
@@ -76,27 +89,49 @@
     </div>
     {% endif %}
 
+    <div class="toast" id="toast"></div>
+
     <script>
         const HOST = window.location.hostname;
-        const moving = {};
+        const busy = {};
+        let toastTimer;
+
+        const labels = {
+            up: 'Moviendo arriba',
+            down: 'Moviendo abajo',
+            left: 'Moviendo a la izquierda',
+            right: 'Moviendo a la derecha',
+            zoom_in: 'Acercando',
+            zoom_out: 'Alejando',
+            home: 'Volviendo a home'
+        };
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(function() { t.classList.remove('show'); }, 800);
+        }
 
         async function ptz(id, action) {
-            if (moving[id]) return;
-            moving[id] = true;
+            if (busy[id]) return;
+            busy[id] = true;
 
-            const controls = document.querySelectorAll('#ctrls-' + id + ' button');
-            const ml = document.getElementById('ml-' + id);
+            var btn = event.currentTarget;
+            var allBtns = document.querySelectorAll('#ctrls-' + id + ' button');
 
-            controls.forEach(function(b) { b.disabled = true; b.classList.add('moving'); });
-            if (ml) ml.classList.add('show');
+            allBtns.forEach(function(b) { b.disabled = true; });
+            btn.classList.add('active');
 
-            const speed = document.getElementById('speed-' + id).value;
+            showToast(labels[action] || action);
+
+            var speed = document.getElementById('speed-' + id).value;
             try { await fetch('/api/ptz/' + id + '/' + action + '?speed=' + speed); } catch(e) {}
 
             setTimeout(function() {
-                controls.forEach(function(b) { b.disabled = false; b.classList.remove('moving'); });
-                if (ml) ml.classList.remove('show');
-                moving[id] = false;
+                allBtns.forEach(function(b) { b.disabled = false; b.classList.remove('active'); });
+                busy[id] = false;
             }, 400);
         }
 
