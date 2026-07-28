@@ -14,11 +14,17 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 DB_PATH = os.getenv('DB_PATH', 'data/cameras.db')
-ADMIN_USER = os.getenv('ADMIN_USER', 'admin')
-ADMIN_PASS = os.getenv('ADMIN_PASS', 'admin123')
+ADMIN_USER = os.getenv('ADMIN_USER')
+ADMIN_PASS = os.getenv('ADMIN_PASS')
 RTSP_PORT = int(os.getenv('RTSP_PORT', '554'))
 GO2RTC_PORT = int(os.getenv('GO2RTC_PORT', '1984'))
 DATA_DIR = os.path.dirname(DB_PATH)
+
+if not ADMIN_USER or not ADMIN_PASS:
+    raise RuntimeError(
+        'ADMIN_USER and ADMIN_PASS environment variables are required. '
+        'Copy .env.example to .env and configure your credentials.'
+    )
 
 
 def get_db():
