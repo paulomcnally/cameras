@@ -59,7 +59,8 @@ def generate_go2rtc_config():
     for cam in cameras:
         rtsp_port = cam['rtsp_port'] or RTSP_PORT
         key = f"cam{cam['id']}"
-        streams[key] = f"rtsp://{cam['user']}:{cam['password']}@{cam['ip']}:{rtsp_port}/stream1"
+        rtsp_url = f"rtsp://{cam['user']}:{cam['password']}@{cam['ip']}:{rtsp_port}/stream1"
+        streams[key] = f"ffmpeg:{rtsp_url}#video=copy#audio=copy"
         streams[f"{key}_sub"] = f"rtsp://{cam['user']}:{cam['password']}@{cam['ip']}:{rtsp_port}/stream2"
 
     config = {
@@ -199,6 +200,46 @@ def api_ptz(id, action):
             return jsonify({'ok': True})
         return jsonify({'error': 'Acción desconocida'}), 400
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ptz/<int:id>/status')
+@login_required
+def api_ptz_status(id):
+    conn = get_db()
+    cam_data = conn.execute('SELECT * FROM cameras WHERE id=?', (id,)).fetchone()
+    conn.close()
+
+    if not cam_data:
+        return jsonify({'error': 'Cámara no encontrada'}), 404
+
+    try:
+        cam = ONVIFCamera(cam_data['ip'], cam_data['port'], cam_data['user'], cam_data['password'])
+        media = cam.create_media_service()
+        ptz = cam.create_ptz_service()
+        profile = media.GetProfiles()[0]
+        status = ptz.GetStatus({'ProfileToken': profile.token})
+
+        pos = status.Position
+        pan = pos.PanTilt.x if pos.PanTilt else 0.0
+        tilt = pos.PanTilt.y if pos.PanTilt else 0.0
+        zoom = pos.Zoom.x if pos.Zoom else 0.0
+        moving = status.MoveStatus
+
+        return jsonify({
+            'pan': pan, 'tilt': tilt, 'zoom': zoom,
+            'pan_tilt_moving': moving.PanTilt if moving else 'IDLE',
+            'zoom_moving': moving.Zoom if moving else 'IDLE',
+            'limits': {
+                'left': pan <= -0.95,
+                'right': pan >= 0.95,
+                'up': tilt >= 0.95,
+                'down': tilt <= -0.95,
+                'zoom_in': zoom >= 0.95,
+                'zoom_out': zoom <= 0.05,
+            }
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

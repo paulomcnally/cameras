@@ -114,6 +114,26 @@
             toastTimer = setTimeout(function() { t.classList.remove('show'); }, 800);
         }
 
+        const btnMap = {
+            up: 0, down: 1, left: 2, right: 3, zoom_in: 4, zoom_out: 5, home: 6
+        };
+
+        async function updateLimits(id) {
+            try {
+                var r = await fetch('/api/ptz/' + id + '/status');
+                var s = await r.json();
+                if (s.error) return;
+                var btns = document.querySelectorAll('#ctrls-' + id + ' button');
+                var L = s.limits;
+                btns[0].disabled = L.up;
+                btns[1].disabled = L.down;
+                btns[2].disabled = L.left;
+                btns[3].disabled = L.right;
+                btns[4].disabled = L.zoom_in;
+                btns[5].disabled = L.zoom_out;
+            } catch(e) {}
+        }
+
         async function ptz(id, action) {
             if (busy[id]) return;
             busy[id] = true;
@@ -129,11 +149,16 @@
             var speed = document.getElementById('speed-' + id).value;
             try { await fetch('/api/ptz/' + id + '/' + action + '?speed=' + speed); } catch(e) {}
 
-            setTimeout(function() {
-                allBtns.forEach(function(b) { b.disabled = false; b.classList.remove('active'); });
+            setTimeout(async function() {
+                allBtns.forEach(function(b) { b.classList.remove('active'); });
+                await updateLimits(id);
                 busy[id] = false;
-            }, 400);
+            }, 500);
         }
+
+        {% for cam in cameras %}
+        (function() { updateLimits({{ cam.id }}); })();
+        {% endfor %}
 
         document.querySelectorAll('iframe[data-cam]').forEach(function(el) {
             var id = el.dataset.cam;
