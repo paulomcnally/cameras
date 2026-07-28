@@ -2,8 +2,7 @@ services:
   cameras:
     build: .
     container_name: cameras
-    ports:
-      - "8080:8080"
+    network_mode: host
     volumes:
       - ./data:/app/data
     env_file:
@@ -18,8 +17,7 @@ services:
   go2rtc:
     image: alexxit/go2rtc:latest
     container_name: go2rtc
-    ports:
-      - "1984:1984"
+    network_mode: host
     volumes:
       - ./data/go2rtc:/config
     depends_on:
