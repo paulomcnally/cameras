@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camaras</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui; background: #111; color: #eee; }
+        nav { background: #1a1a1a; padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        nav a { color: #93c5fd; text-decoration: none; margin-left: 1rem; font-size: 0.9rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; padding: 1rem; }
+        .cam { background: #1a1a1a; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+        .cam-header { padding: 0.5rem 0.75rem; background: #222; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+        .cam-stream { width: 100%; aspect-ratio: 16/9; background: #000; }
+        .cam-stream iframe { width: 100%; height: 100%; border: none; }
+        .controls { padding: 0.5rem; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .controls button { padding: 0.5rem; border: none; border-radius: 4px; background: #333; color: #eee; cursor: pointer; font-size: 0.85rem; }
+        .controls button:hover { background: #2563eb; }
+        .controls button.home { background: #dc2626; }
+        .controls button.home:hover { background: #b91c1c; }
+        .bar { padding: 0.3rem 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; color: #888; }
+        .bar input[type=range] { width: 50px; }
+        .empty { text-align: center; padding: 3rem; color: #666; }
+        .empty a { color: #60a5fa; }
+        .badge { font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 3px; background: #16a34a33; color: #4ade80; }
+    </style>
+</head>
+<body>
+    <nav>
+        <strong>Cam</strong>
+        <div>
+            <a href="/">Inicio</a>
+            <a href="/cameras">Administrar</a>
+            <a href="/logout">Salir</a>
+        </div>
+    </nav>
+
+    {% if cameras %}
+    <div class="grid">
+        {% for cam in cameras %}
+        <div class="cam">
+            <div class="cam-header">
+                <span>{{ cam.name }}</span>
+                <span class="badge">{{ cam.ip }}</span>
+            </div>
+            <div class="cam-stream">
+                <iframe id="f-{{ cam.id }}" allow="autoplay; encrypted-media" data-cam="{{ cam.id }}"></iframe>
+            </div>
+            <div class="bar">
+                <span>Vel:</span>
+                <input type="range" min="0.1" max="1" step="0.1" value="0.5" id="speed-{{ cam.id }}">
+            </div>
+            <div class="controls">
+                <button onclick="ptz({{ cam.id }},'up')">&#9650;</button>
+                <button onclick="ptz({{ cam.id }},'down')">&#9660;</button>
+                <button onclick="ptz({{ cam.id }},'left')">&#9664;</button>
+                <button onclick="ptz({{ cam.id }},'right')">&#9654;</button>
+                <button onclick="ptz({{ cam.id }},'zoom_in')">Z+</button>
+                <button onclick="ptz({{ cam.id }},'zoom_out')">Z-</button>
+                <button onclick="ptz({{ cam.id }},'home')" class="home">&#9673;</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+        <p>No hay camaras configuradas</p>
+        <a href="/cameras">Agregar camara</a>
+    </div>
+    {% endif %}
+
+    <script>
+        const HOST = window.location.hostname;
+
+        async function ptz(id, action) {
+            const speed = document.getElementById('speed-' + id).value;
+            try { await fetch('/api/ptz/' + id + '/' + action + '?speed=' + speed); } catch(e) {}
+        }
+
+        document.querySelectorAll('iframe[data-cam]').forEach(function(el) {
+            const id = el.dataset.cam;
+            el.src = 'http://' + HOST + ':1984/stream.html?src=cam' + id + '&mode=mse';
+        });
+    </script>
+</body>
+</html>
