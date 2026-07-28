@@ -215,9 +215,8 @@ def api_rtsp(id):
 
     rtsp_port = cam_data['rtsp_port'] or RTSP_PORT
     urls = {
-        'stream1': f"rtsp://{cam_data['user']}:{cam_data['password']}@{cam_data['ip']}:{rtsp_port}/stream1",
-        'stream2': f"rtsp://{cam_data['user']}:{cam_data['password']}@{cam_data['ip']}:{rtsp_port}/stream2",
-        'live_ch00_0': f"rtsp://{cam_data['user']}:{cam_data['password']}@{cam_data['ip']}:{rtsp_port}/live/ch00_0",
+        'ch00_0': f"rtsp://{cam_data['ip']}:{rtsp_port}/live/ch00_0",
+        'ch00_1': f"rtsp://{cam_data['ip']}:{rtsp_port}/live/ch00_1",
     }
     return jsonify(urls)
 
