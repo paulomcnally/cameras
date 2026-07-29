@@ -11,8 +11,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: '0.5'
+          memory: 256M
+          cpus: '1.0'
 
   go2rtc:
     image: alexxit/go2rtc:latest

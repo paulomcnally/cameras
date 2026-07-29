@@ -7,6 +7,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from dotenv import load_dotenv
 from onvif import ONVIFCamera
+from motion_detector import motion_pool
 
 load_dotenv()
 
@@ -19,6 +20,13 @@ ADMIN_PASS = os.getenv('ADMIN_PASS')
 RTSP_PORT = int(os.getenv('RTSP_PORT', '554'))
 GO2RTC_PORT = int(os.getenv('GO2RTC_PORT', '1984'))
 DATA_DIR = os.path.dirname(DB_PATH)
+
+NTFY_TOPIC = os.getenv('NTFY_TOPIC', 'motion-alerts')
+NTFY_SERVER = os.getenv('NTFY_SERVER', 'https://ntfy.sh')
+MOTION_THRESHOLD = int(os.getenv('MOTION_THRESHOLD', '500'))
+DETECTION_INTERVAL = int(os.getenv('DETECTION_INTERVAL', '3'))
+MIN_MOTION_AREA = float(os.getenv('MIN_MOTION_AREA', '1.5'))
+NOTIFICATION_COOLDOWN = int(os.getenv('NOTIFICATION_COOLDOWN', '10'))
 
 if not ADMIN_USER or not ADMIN_PASS:
     raise RuntimeError(
@@ -44,8 +52,13 @@ def init_db():
         user TEXT NOT NULL,
         password TEXT NOT NULL,
         rtsp_port INTEGER DEFAULT 554,
-        enabled INTEGER DEFAULT 1
+        enabled INTEGER DEFAULT 1,
+        motion_enabled INTEGER DEFAULT 0
     )''')
+    try:
+        conn.execute('ALTER TABLE cameras ADD COLUMN motion_enabled INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -148,6 +161,7 @@ def api_add_camera():
 @app.route('/api/cameras/<int:id>', methods=['DELETE'])
 @login_required
 def api_delete_camera(id):
+    motion_pool.stop(id)
     conn = get_db()
     conn.execute('DELETE FROM cameras WHERE id=?', (id,))
     conn.commit()
@@ -262,6 +276,68 @@ def api_rtsp(id):
     return jsonify(urls)
 
 
+@app.route('/api/cameras/<int:id>/motion-status')
+@login_required
+def api_motion_status(id):
+    conn = get_db()
+    cam_data = conn.execute('SELECT * FROM cameras WHERE id=?', (id,)).fetchone()
+    conn.close()
+
+    if not cam_data:
+        return jsonify({'error': 'Cámara no encontrada'}), 404
+
+    enabled = bool(cam_data['motion_enabled'])
+    detector_status = motion_pool.get_status(id)
+
+    return jsonify({
+        'enabled': enabled,
+        'running': motion_pool.is_running(id),
+        'detecting': detector_status.get('detecting', False),
+        'connected': detector_status.get('connected', False),
+        'frame_count': detector_status.get('frame_count', 0),
+        'last_motion': detector_status.get('last_motion'),
+    })
+
+
+@app.route('/api/cameras/<int:id>/motion', methods=['POST'])
+@login_required
+def api_toggle_motion(id):
+    conn = get_db()
+    cam_data = conn.execute('SELECT * FROM cameras WHERE id=?', (id,)).fetchone()
+
+    if not cam_data:
+        conn.close()
+        return jsonify({'error': 'Cámara no encontrada'}), 404
+
+    enable = request.json.get('enable', True) if request.json else True
+
+    try:
+        if enable:
+            config = {
+                'ntfy_topic': NTFY_TOPIC,
+                'ntfy_server': NTFY_SERVER,
+                'motion_threshold': MOTION_THRESHOLD,
+                'detection_interval': DETECTION_INTERVAL,
+                'min_motion_area': MIN_MOTION_AREA,
+                'notification_cooldown': NOTIFICATION_COOLDOWN,
+            }
+            success = motion_pool.start(id, cam_data, config)
+            if not success:
+                conn.close()
+                return jsonify({'error': 'No se pudo iniciar el detector'}), 500
+        else:
+            motion_pool.stop(id)
+
+        conn.execute('UPDATE cameras SET motion_enabled = ? WHERE id = ?', (1 if enable else 0, id))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'ok': True, 'enabled': enable})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
 def move(ptz, profile, x, y, zoom, duration=0.3):
     import time
     req = ptz.create_type('ContinuousMove')
@@ -279,7 +355,25 @@ def go_home(ptz, profile):
     ptz.AbsoluteMove(req)
 
 
+def start_enabled_detectors():
+    conn = get_db()
+    cameras = conn.execute('SELECT * FROM cameras WHERE motion_enabled=1 AND enabled=1').fetchall()
+    conn.close()
+    config = {
+        'ntfy_topic': NTFY_TOPIC,
+        'ntfy_server': NTFY_SERVER,
+        'motion_threshold': MOTION_THRESHOLD,
+        'detection_interval': DETECTION_INTERVAL,
+        'min_motion_area': MIN_MOTION_AREA,
+        'notification_cooldown': NOTIFICATION_COOLDOWN,
+    }
+    for cam in cameras:
+        print(f"Iniciando detector para cam {cam['id']} ({cam['name']})")
+        motion_pool.start(cam['id'], cam, config)
+
+
 if __name__ == '__main__':
     init_db()
     generate_go2rtc_config()
+    start_enabled_detectors()
     app.run(host='0.0.0.0', port=8080)
